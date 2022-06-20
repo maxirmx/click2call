@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="win-1251">
+    <title>Fingerprinting</title>
+    <script src="clientjs/client.base.min.js"></script>
+</head>
+<body>
+
+<h2>Your fingerprint: <span id="finger">Here lives fingerprint</span> </h2>
+
+<script>
+    const ClientJS = window.ClientJS;
+    // Create a new ClientJS object
+    const client = new ClientJS();
+
+    // Get the client's fingerprint id
+    const fingerprint = client.getFingerprint();
+
+    // Print the 32bit hash id to the console
+    console.log(fingerprint);
+
+
+    var span = document.getElementById('finger');
+    if ('textContent' in span) {
+        span.textContent = fingerprint;
+    } else {
+        span.innerText = fingerprint;
+    }
+
+</script>
+
+</body>
+</html>
