@@ -1,0 +1,11 @@
+Options -Indexes
+
+<Files .htaccess>
+order deny,allow
+deny from all
+</Files>
+
+<Files click2call.ini>
+order deny,allow
+deny from all
+</Files>
