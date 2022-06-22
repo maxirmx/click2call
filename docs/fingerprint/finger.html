@@ -7,7 +7,13 @@
 </head>
 <body>
 
-<h2>Your fingerprint: <span id="finger">Here lives fingerprint</span> </h2>
+<h2>Fingerprint test</h2>
+
+При переходе по ссылке ниже имитируется запрос сервиса.<br/>
+Доступ к сервису  из одного браузера разрешён не чаще, чем раз в 30 секунд.<br/>
+Попробуйте сходить по ссылке несколько раз подряд. Можно просто обновлять страницу.<br/>
+
+<p><a href="./fingerquery.php" id="fingerquery">Запрос сервиса</a></p>
 
 <script>
     const ClientJS = window.ClientJS;
@@ -20,13 +26,7 @@
     // Print the 32bit hash id to the console
     console.log(fingerprint);
 
-
-    var span = document.getElementById('finger');
-    if ('textContent' in span) {
-        span.textContent = fingerprint;
-    } else {
-        span.innerText = fingerprint;
-    }
+    document.getElementById("fingerquery").href="fingerquery.php?finger=" + fingerprint;
 
 </script>
 
