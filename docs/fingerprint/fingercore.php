@@ -29,12 +29,7 @@
 /**
  * Флаг отладочного режима
  */
-   protected $dbg = true;
-
-/**
- * Флаг поддержки FOREIGN KEYS
- */
-   protected $fk = false;
+   protected $dbg = false;
 
 /**
  * __construct Конструктор  
@@ -54,7 +49,7 @@
  */
    protected function debugOutput($s)
    {
-     if ($this->dbg)  { print "$s." . (PHP_SAPI==="cli" ? PHP_EOL: '<br/>'); }  
+    if ($this->dbg === true)  { print $s . (PHP_SAPI==="cli" ? PHP_EOL: '<br/>'); }
    }         // C2CBase::debugOutput
 
 /**
@@ -65,7 +60,7 @@
  */
    protected function pdoError($e)
    {
-       $this->debugOutput('PDO Exception: ' . $e->getMessage());
+     $this->debugOutput("PDO Exception: " . $e->getMessage());
    }         // C2CBase::pdoError
 
 /**
@@ -78,7 +73,7 @@
  */
    protected function doSearch($s, $array = false, $assoc = false)
    {
-     $this->debugOutput("Executing SQL: $s");
+     $this->debugOutput("Executing SQL:'" . $s . "'");
      $q = self::$dbh->query($s);
      $r = $q->fetchAll($assoc ? PDO::FETCH_ASSOC : PDO::FETCH_NUM);
      $q->closeCursor();
@@ -99,9 +94,9 @@
  */
    protected function doExec($s)
    {
-     $this->debugOutput("Executing SQL: $s");
-     $r = self::$dbh->exec($s);
-     return $r;
+    $this->debugOutput("Executing SQL:'" . $s . "'");
+    $r = self::$dbh->exec($s);
+    return $r;
    }   // C2CBase::doExec
  }
 
@@ -117,7 +112,7 @@
 /**
  * Код ошибки:     ref only
  */
-   const RWD_E_INVALID_COMMAND       = -1;
+   const RWD_E_INVALID_COMMAND  = -1;
 /**
  * Код ошибки: Ошибка формата ответа сервера
  * Используется только внутри клиентских приложений. Здесь приведено для контроля целостности кодов ошибок.    
@@ -135,8 +130,9 @@
 /**
  *
  */
-   protected $db;
-   protected $protect;
+   protected $db = 'sqlite:/usr/local/fingercore/db';
+   protected $create = false;
+   protected $protect = 7200;  // 60*60*2;
 
 /**
  * __construct Конструктор  
@@ -148,12 +144,11 @@
      $this->dbg = $dbg;
 
      $ini = parse_ini_file("fingercore.ini", true);
-     if ($ini && $ini["database"]["path"] != NULL)  { $this->db =  'sqlite:' . $ini["database"]["path"]; }
-     else                                           { $this->db =  'sqlite:/usr/local/fingercore/db';    }
+     if ($ini && $ini["database"]["path"] != NULL)   { $this->db = "sqlite:" . $ini["database"]["path"]; }
+     if ($ini && $ini["visit"]["protect"] != NULL)   { $this->protect = intval($ini["visit"]["protect"]); }
+     if ($ini && $ini["database"]["create"] != NULL) { $this->create = $ini["database"]["create"]; }
 
-     if ($ini && $ini["visit"]["protect"] != NULL)  { $this->protect = intval($ini["visit"]["protect"]); }
-     else                                           { $this->protect = 60*60*2;    }
-
+     $this->debugOutput("path='" . $this->db . "' protect=" . $this->protect . " create=" .  $this->create);
 
    }   // WDb::__construct
 
@@ -186,8 +181,8 @@
    private function queryTable($s)
    { 
        $r = $this->doSearch("SELECT name FROM sqlite_master WHERE type = 'table' AND name = '$s'");
-       if ($r === false) { $this->debugOutput("Query table '$s': does not exist");      }
-       else              { $this->debugOutput("Query table '$s': exists");  $r = true;  }
+       if ($r === false) { $this->debugOutput("Query table '" . $s . "': does not exist");      }
+       else              { $this->debugOutput("Query table '" . $s . "': exists");  $r = true;  }
        return $r;
    }         // WDb::queryTable
 
@@ -224,18 +219,17 @@
      {
         if (self::$dbh == NULL)
         {
-          $this->debugOutput("Opening database file at: '$this->db'");
+          $this->debugOutput("Opening database file at: " . $this->db);
           self::$dbh = new PDO($this->db);
-          $this->doExec ("PRAGMA foreign_keys = ON");
-          $this->fk = ($this->doSearch("PRAGMA foreign_keys") == 1);
 
-          if ($ini && $ini["database"]["create"]) 
+          if ($this->create) 
           { 
             if ($this->queryTable("Visits") === false) {
                 if ($this->doExec( <<< __SQL__
                       CREATE TABLE IF NOT EXISTS Visits  (
                            id     INTEGER PRIMARY KEY,
                            fingerprint CHAR[32] NOT NULL ON CONFLICT ABORT UNIQUE ON CONFLICT ABORT,
+                           chatid CHAR[32],
                            unixtime INTEGER
                         )
 __SQL__
@@ -250,7 +244,7 @@ __SQL__
 __SQL__
                   )  === false) { return WDb::RWD_ERROR; }
 
-                 if ($this->doExec("INSERT INTO Version (version) VALUES ('00.01.00')") !=1)  { return WDb::RWD_ERROR; }
+                 if ($this->doExec("INSERT INTO Version (version) VALUES ('00.02.00')") !=1)  { return WDb::RWD_ERROR; }
              }
           }
         }
@@ -269,30 +263,33 @@ __SQL__
  * @param string $finger
  *
  */
-   public function Query($finger)
-   {
-     try 
-     {
+   public function Query($finger, $chatid) {
+     try {
         $w = time() - $this->protect;
         $this->doExec("DELETE FROM Visits WHERE unixtime < '$w'");
-        $visit = $this->doSearch("SELECT unixtime FROM Visits WHERE fingerprint ='$finger' ORDER BY unixtime ASC LIMIT 1");
-        if ($visit === false)
-        {
-            $this->doExec("INSERT INTO Visits (fingerprint, unixtime) VALUES ('$finger', strftime ('%s', 'now'))");
-            return "Ваш уникальный идентификатор: " . $finger . "<br /> Доступ к сервису разрешён.";
+        $visit = $this->doSearch("SELECT unixtime, chatid FROM Visits WHERE fingerprint ='$finger' ORDER BY unixtime ASC LIMIT 1", true);
+        if (count($visit) == 0) {
+          $this->debugOutput("fingerprint $finger was not found");
+          $this->doExec("INSERT INTO Visits (fingerprint, chatid, unixtime) VALUES ('$finger', '$chatid', strftime ('%s', 'now'))");
+          $res = array("ret"=>WDb::RWD_OK, "allow"=>true, "exist"=>false, "wait"=>0);
         }
-        else
-        {
-             $w = $visit + $this->protect - time();
-             return " Ваш уникальный идентификатор: " . $finger . "<br /> Доступ к сервису запрещён, осталось ждать " . $w . " сек.";
+        else if ($chatid == $visit[0][1]) {
+          $this->debugOutput("fingerprint $finger was found with matching chatid $chatid");
+          $res = array("ret"=>WDb::RWD_OK, "allow"=>true, "exist"=>true, "wait"=>0);
+        }
+        else {
+          $this->debugOutput("fingerprint $finger was found without matching chatid");
+          $w = $visit[0][0] + $this->protect - time();
+          $this->debugOutput("time-to-wait $w");
+          $res = array("ret"=>WDb::RWD_OK, "allow"=>false, "exist"=>false, "wait"=>$w);
         }
      }
-     catch (PDOException $e)
-     {
+     catch (PDOException $e) {
        $this->pdoError($e);
-       return WDb::RWD_DB_ERROR;
+       $res = array("ret"=>WDb::RWD_DB_ERROR, "allow"=>false, "exist"=>false, "wait"=>0);
      }
-   }    // WDb::Query
+     return $res;
+    }    // WDb::Query
 
 
 /**
